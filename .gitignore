@@ -1,0 +1,13 @@
+# 自己的频道清单不进仓库
+data/*
+!data/.gitkeep
+
+*.m3u
+*.m3u8
+!app/static/mpegts.js
+
+__pycache__/
+*.py[cod]
+.venv/
+.DS_Store
+Thumbs.db

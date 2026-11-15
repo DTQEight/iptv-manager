@@ -1,0 +1,269 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>IPTV 管理</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;font:14px/1.5 -apple-system,"Segoe UI","Microsoft YaHei",sans-serif;background:#0f1115;color:#e6e8ee}
+header{padding:14px 20px;background:#161a22;border-bottom:1px solid #232a36;position:sticky;top:0;z-index:10}
+h1{margin:0;font-size:17px;font-weight:600;display:flex;align-items:center;gap:10px}
+h1 small{color:#7c8798;font-weight:400;font-size:12px}
+.bar{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;align-items:center}
+input,button,select{font:inherit;font-size:13px;padding:7px 11px;border-radius:8px;border:1px solid #2b3444;background:#1c2230;color:#e6e8ee}
+input{flex:1;min-width:180px}
+button{cursor:pointer}
+button:hover{background:#25303f}
+button.pri{background:#2f6fed;border-color:#2f6fed}
+button.pri:hover{background:#3b7bf5}
+button.danger:hover{background:#4a1f24;border-color:#8b2e37;color:#ffb4bb}
+nav{padding:8px 20px;display:flex;gap:6px;flex-wrap:wrap;border-bottom:1px solid #232a36;background:#12161d}
+nav button{border-radius:20px;padding:4px 12px;font-size:12px}
+nav button.on{background:#2f6fed;border-color:#2f6fed}
+main{padding:14px 20px;display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:8px}
+.card{background:#161a22;border:1px solid #232a36;border-radius:10px;padding:10px 12px;display:flex;flex-direction:column;gap:8px}
+.card .nm{font-weight:600;font-size:13px;word-break:break-all}
+.card .gp{font-size:11px;color:#7c8798}
+.card .u{font:11px/1.35 ui-monospace,Consolas,monospace;color:#9fd0ff;word-break:break-all;max-height:36px;overflow:hidden}
+.card .ops{display:flex;gap:6px;flex-wrap:wrap}
+.card .ops button{padding:4px 9px;font-size:12px;border-radius:6px}
+.empty{padding:40px 20px;color:#7c8798;text-align:center;grid-column:1/-1}
+dialog{background:#161a22;color:#e6e8ee;border:1px solid #2b3444;border-radius:12px;padding:0;width:min(560px,92vw)}
+dialog::backdrop{background:rgba(0,0,0,.6)}
+dialog .dh{padding:12px 16px;border-bottom:1px solid #232a36;font-weight:600}
+dialog .db{padding:14px 16px;display:flex;flex-direction:column;gap:10px}
+dialog label{display:flex;flex-direction:column;gap:4px;font-size:12px;color:#9aa6b6}
+dialog input{width:100%}
+dialog .df{padding:12px 16px;border-top:1px solid #232a36;display:flex;gap:8px;justify-content:flex-end}
+#player{position:fixed;inset:0;background:#000;display:none;z-index:50}
+#player video{width:100%;height:100%;background:#000}
+#player .close{position:absolute;top:14px;right:16px;z-index:2}
+#player .tip{position:absolute;bottom:16px;left:16px;right:16px;font-size:12px;color:#9aa6b6}
+.toast{position:fixed;left:50%;bottom:28px;transform:translateX(-50%);background:#1f2733;border:1px solid #2f3a4a;padding:9px 16px;border-radius:999px;font-size:13px;opacity:0;pointer-events:none;transition:.2s;z-index:99}
+.toast.on{opacity:1}
+</style>
+</head>
+<body>
+<header>
+  <h1>IPTV 管理 <small id="stat">加载中…</small></h1>
+  <div class="bar">
+    <input id="q" placeholder="搜索频道名 / 频道号 / 分组">
+    <button id="add">＋ 新增频道</button>
+    <button id="import">导入 M3U</button>
+    <button id="export">导出 M3U</button>
+    <button id="copySub">复制订阅地址</button>
+  </div>
+</header>
+<nav id="groups"></nav>
+<main id="list"></main>
+
+<div id="player">
+  <button class="close" id="closePlayer">关闭</button>
+  <video id="video" controls autoplay playsinline></video>
+  <div class="tip" id="ptip"></div>
+</div>
+
+<dialog id="edit">
+  <form method="dialog">
+    <div class="dh" id="editTitle">频道</div>
+    <div class="db">
+      <label>名称<input id="f_name" required></label>
+      <label>分组<input id="f_group" placeholder="例如 央视 / 卫视 / 港澳台"></label>
+      <label>频道号<input id="f_chno" placeholder="可留空"></label>
+      <label>台标 URL<input id="f_logo" placeholder="可留空"></label>
+      <label>播放地址<input id="f_url" required placeholder="http://udpxy:4022/rtp/239.x.x.x:port"></label>
+    </div>
+    <div class="df">
+      <button value="cancel">取消</button>
+      <button class="pri" id="saveEdit" value="ok">保存</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="imp">
+  <form method="dialog">
+    <div class="dh">导入 M3U</div>
+    <div class="db">
+      <label>选择文件<input type="file" id="file" accept=".m3u,.m3u8,text/plain"></label>
+      <label>或直接粘贴内容<textarea id="paste" rows="8" style="font:12px/1.4 ui-monospace,Consolas,monospace;background:#0f1115;color:#e6e8ee;border:1px solid #2b3444;border-radius:8px;padding:8px"></textarea></label>
+      <label style="flex-direction:row;align-items:center;gap:8px"><input type="checkbox" id="merge" style="width:auto"> 合并到现有清单（默认覆盖）</label>
+    </div>
+    <div class="df">
+      <button value="cancel">取消</button>
+      <button class="pri" id="doImport" value="ok">导入</button>
+    </div>
+  </form>
+</dialog>
+
+<div class="toast" id="toast"></div>
+
+<script src="/mpegts.js"></script>
+<script>
+let ALL = [], GROUPS = [], group = "全部", editing = -1, player = null;
+
+const $ = s => document.querySelector(s);
+const esc = s => (s ?? "").toString().replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+
+function toast(msg){
+  const t = $("#toast"); t.textContent = msg; t.classList.add("on");
+  clearTimeout(t._h); t._h = setTimeout(() => t.classList.remove("on"), 1800);
+}
+
+async function load(){
+  const r = await fetch("/api/channels");
+  const d = await r.json();
+  ALL = d.channels || []; GROUPS = d.groups || [];
+  $("#stat").textContent = ALL.length + " 个频道 · " + GROUPS.length + " 个分组";
+  if (group !== "全部" && !GROUPS.some(g => g.name === group)) group = "全部";
+  renderNav(); render();
+}
+
+function renderNav(){
+  const nav = $("#groups");
+  const items = [{name:"全部", count: ALL.length}].concat(GROUPS);
+  nav.innerHTML = items.map(g =>
+    `<button data-g="${esc(g.name)}" class="${g.name===group?'on':''}">${esc(g.name)} · ${g.count}</button>`
+  ).join("");
+  nav.querySelectorAll("button").forEach(b => b.onclick = () => { group = b.dataset.g; renderNav(); render(); });
+}
+
+function visible(){
+  const q = $("#q").value.trim().toLowerCase();
+  return ALL.filter(c => {
+    if (group !== "全部" && (c.group || "未分组") !== group) return false;
+    if (!q) return true;
+    return [c.name, c.chno, c.group, c.url].some(v => (v || "").toLowerCase().includes(q));
+  });
+}
+
+function render(){
+  const list = $("#list"), items = visible();
+  if (!items.length){
+    list.innerHTML = `<div class="empty">${ALL.length ? "没有匹配的频道" : "还没有频道，点右上角「导入 M3U」或「＋ 新增频道」"}</div>`;
+    return;
+  }
+  list.innerHTML = items.map(c => {
+    const i = ALL.indexOf(c);
+    return `<div class="card">
+      <div class="nm">${esc(c.name)}</div>
+      <div class="gp">${esc(c.group || "未分组")}${c.chno ? " · " + esc(c.chno) : ""}</div>
+      <div class="u">${esc(c.url)}</div>
+      <div class="ops">
+        <button data-act="play" data-i="${i}">播放</button>
+        <button data-act="edit" data-i="${i}">编辑</button>
+        <button data-act="copy" data-i="${i}">复制链接</button>
+        <button class="danger" data-act="del" data-i="${i}">删除</button>
+      </div>
+    </div>`;
+  }).join("");
+  list.querySelectorAll("button[data-act]").forEach(b => b.onclick = () => act(b.dataset.act, +b.dataset.i));
+}
+
+function act(a, i){
+  const c = ALL[i];
+  if (a === "play") return play(c);
+  if (a === "copy") return copyText(c.url, "链接已复制");
+  if (a === "del"){
+    if (!confirm(`删除「${c.name}」？`)) return;
+    ALL.splice(i, 1); save();
+    return;
+  }
+  if (a === "edit"){
+    editing = i;
+    $("#editTitle").textContent = "编辑频道";
+    $("#f_name").value = c.name || ""; $("#f_group").value = c.group || "";
+    $("#f_chno").value = c.chno || ""; $("#f_logo").value = c.logo || ""; $("#f_url").value = c.url || "";
+    $("#edit").showModal();
+  }
+}
+
+async function copyText(text, ok){
+  try {
+    await navigator.clipboard.writeText(text);
+  } catch (e) {
+    const ta = document.createElement("textarea");
+    ta.value = text; document.body.appendChild(ta); ta.select();
+    document.execCommand("copy"); ta.remove();
+  }
+  toast(ok || "已复制");
+}
+
+async function save(){
+  const r = await fetch("/api/channels", {
+    method: "PUT", headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({channels: ALL})
+  });
+  if (!r.ok){ toast("保存失败"); return; }
+  await load();
+  toast("已保存");
+}
+
+function play(c){
+  $("#player").style.display = "block";
+  $("#ptip").textContent = c.name + " · " + c.url;
+  const v = $("#video");
+  if (player){ try { player.destroy(); } catch(e){} player = null; }
+  const isTs = /\.ts(\?|$)|\/rtp\//i.test(c.url);
+  if (window.mpegts && isTs){
+    player = mpegts.createPlayer({type: "mpegts", isLive: true, url: c.url}, {enableWorker: true, liveBufferLatencyChasing: true});
+    player.attachMediaElement(v);
+    player.on(mpegts.Events.ERROR, () => { $("#ptip").textContent = "播放失败，可能需要 udpxy 或换 AAC 版地址"; });
+    player.load(); v.play().catch(() => {});
+  } else {
+    v.src = c.url; v.play().catch(() => {});
+  }
+}
+
+$("#add").onclick = () => {
+  editing = -1;
+  $("#editTitle").textContent = "新增频道";
+  ["f_name","f_group","f_chno","f_logo","f_url"].forEach(id => $("#" + id).value = "");
+  $("#edit").showModal();
+};
+
+$("#saveEdit").onclick = (e) => {
+  const c = {
+    name: $("#f_name").value.trim(), group: $("#f_group").value.trim() || "未分组",
+    chno: $("#f_chno").value.trim(), logo: $("#f_logo").value.trim(), url: $("#f_url").value.trim()
+  };
+  if (!c.name || !c.url){ e.preventDefault(); toast("名称和地址必填"); return; }
+  if (editing >= 0) ALL[editing] = c; else ALL.push(c);
+};
+
+$("#edit").addEventListener("close", () => {
+  if ($("#edit").returnValue === "ok") save();
+});
+
+$("#import").onclick = () => { $("#paste").value = ""; $("#file").value = ""; $("#merge").checked = false; $("#imp").showModal(); };
+
+$("#file").onchange = async (e) => {
+  const f = e.target.files[0];
+  if (f) $("#paste").value = await f.text();
+};
+
+$("#doImport").onclick = async () => {
+  const text = $("#paste").value.trim();
+  if (!text){ toast("没有内容"); return; }
+  const mode = $("#merge").checked ? "merge" : "replace";
+  const r = await fetch("/api/import?mode=" + mode, { method: "POST", body: text });
+  const d = await r.json();
+  if (!r.ok){ toast(d.error || "导入失败"); return; }
+  await load(); toast("导入完成：" + d.count + " 个频道");
+};
+
+$("#export").onclick = () => { location.href = "/api/export.m3u"; };
+
+$("#copySub").onclick = () => copyText(location.origin + "/list.m3u", "订阅地址已复制：" + location.origin + "/list.m3u");
+
+$("#closePlayer").onclick = () => {
+  if (player){ try { player.destroy(); } catch(e){} player = null; }
+  const v = $("#video"); v.pause(); v.removeAttribute("src"); v.load();
+  $("#player").style.display = "none";
+};
+
+$("#q").oninput = render;
+load();
+</script>
+</body>
+</html>

@@ -1,0 +1,14 @@
+services:
+  iptv-manager:
+    build: .
+    image: iptv-manager:latest
+    container_name: iptv-manager
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    volumes:
+      # 频道清单存在这里，容器删了数据还在
+      - ./data:/data
+    environment:
+      - TZ=Asia/Shanghai
+      - PORT=8080
