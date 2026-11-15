@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>TVDesk 配置生成器</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;font:14px/1.6 -apple-system,"Segoe UI","Microsoft YaHei",sans-serif;background:#0f1115;color:#e6e8ee}
+header{padding:16px 20px;background:#161a22;border-bottom:1px solid #232a36;position:sticky;top:0;z-index:5}
+h1{margin:0;font-size:18px;font-weight:600}
+h1 small{color:#7c8798;font-weight:400;font-size:12px;margin-left:8px}
+.wrap{max-width:900px;margin:0 auto;padding:16px 20px 60px}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+@media(max-width:720px){.grid{grid-template-columns:1fr}}
+label{display:flex;flex-direction:column;gap:4px;font-size:12px;color:#9aa6b6}
+input{font:inherit;font-size:13px;padding:8px 11px;border-radius:8px;border:1px solid #2b3444;background:#1c2230;color:#e6e8ee}
+input:focus{outline:none;border-color:#2f6fed}
+.sec{margin-top:18px;padding:12px 14px;border:1px solid #232a36;border-radius:10px;background:#12161d}
+.sec h2{margin:0 0 4px;font-size:13px;font-weight:600;color:#e6e8ee}
+.sec p{margin:0 0 10px;font-size:12px;color:#7c8798}
+.sec p code{color:#9fd0ff;font:12px ui-monospace,Consolas,monospace}
+.bar{display:flex;gap:8px;flex-wrap:wrap;margin-top:16px}
+button{font:inherit;font-size:13px;padding:8px 14px;border-radius:8px;border:1px solid #2b3444;background:#1c2230;color:#e6e8ee;cursor:pointer}
+button:hover{background:#25303f}
+button.pri{background:#2f6fed;border-color:#2f6fed}
+button.pri:hover{background:#3b7bf5}
+pre{margin:12px 0 0;padding:12px;background:#0b0f14;border:1px solid #232a36;border-radius:10px;
+    font:12px/1.5 ui-monospace,Consolas,monospace;color:#9fd0ff;overflow:auto;white-space:pre-wrap;word-break:break-all}
+.toast{position:fixed;left:50%;bottom:26px;transform:translateX(-50%);background:#1f2733;border:1px solid #2f3a4a;
+       padding:9px 16px;border-radius:999px;font-size:13px;opacity:0;pointer-events:none;transition:.2s}
+.toast.on{opacity:1}
+.hint{font-size:12px;color:#7c8798;margin-top:6px}
+</style>
+</head>
+<body>
+<header>
+  <h1>TVDesk 配置生成器 <small>填完下载 desk.json，adb push 到电视就生效</small></h1>
+</header>
+
+<div class="wrap">
+  <div class="sec">
+    <h2>影视（Jellyfin）</h2>
+    <p>不填则电视上不显示「影视」页。</p>
+    <div class="grid">
+      <label>服务器地址<input id="jfBase" placeholder="http://192.168.1.10:8096"></label>
+      <label>API 令牌<input id="jfToken" placeholder="Jellyfin 控制台 → API 密钥"></label>
+      <label>用户 ID<input id="jfUser" placeholder="用户页面 URL 里的 userId"></label>
+    </div>
+  </div>
+
+  <div class="sec">
+    <h2>推荐（MoviePilot + 2bt0）</h2>
+    <p>两个都要填，才会出现「推荐」页。</p>
+    <div class="grid">
+      <label>MoviePilot 地址<input id="mpBase" placeholder="http://192.168.1.10:3000"></label>
+      <label>MoviePilot Key<input id="mpKey" placeholder="设置 → API → API Key"></label>
+      <label>2bt0 资源库地址<input id="libBase" placeholder="http://192.168.1.10:8000"></label>
+      <label>2bt0 Key<input id="libKey" placeholder="X-API-Key"></label>
+    </div>
+  </div>
+
+  <div class="sec">
+    <h2>直播</h2>
+    <p>填 M3U 订阅地址；用本容器的订阅源就是 <code id="subHint">/list.m3u</code>。</p>
+    <div class="grid">
+      <label>直播源 M3U<input id="liveM3u"></label>
+      <label>EPG 地址（可选）<input id="epgUrl" placeholder="http://epg.example.com/t.xml.gz"></label>
+    </div>
+    <div class="hint">订阅源里是 <code>http://&lt;本机&gt;:4022/rtp/239.x.x.x:1025</code> 形式的地址，电视必须能访问到本机。</div>
+  </div>
+
+  <div class="bar">
+    <button class="pri" id="dl">下载 desk.json</button>
+    <button id="copyJson">复制 JSON</button>
+    <button id="copyCmd">复制 adb 命令</button>
+    <button id="clear">全部清空</button>
+  </div>
+
+  <pre id="out"></pre>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const FIELDS = ["jfBase", "jfToken", "jfUser", "mpBase", "mpKey", "libBase", "libKey", "liveM3u", "epgUrl"];
+const $ = s => document.querySelector(s);
+
+// 直播订阅地址默认指向本机
+const subUrl = location.origin + "/list.m3u";
+$("#liveM3u").value = subUrl;
+$("#subHint").textContent = subUrl;
+
+function collect() {
+  const o = {};
+  for (const k of FIELDS) {
+    const v = ($("#" + k).value || "").trim();
+    if (v) o[k] = v;
+  }
+  return o;
+}
+
+function render() {
+  $("#out").textContent = JSON.stringify(collect(), null, 2);
+}
+
+function toast(m) {
+  const t = $("#toast");
+  t.textContent = m;
+  t.classList.add("on");
+  clearTimeout(t._h);
+  t._h = setTimeout(() => t.classList.remove("on"), 1600);
+}
+
+async function copy(text, ok) {
+  try { await navigator.clipboard.writeText(text); }
+  catch (e) {
+    const ta = document.createElement("textarea");
+    ta.value = text; document.body.appendChild(ta); ta.select();
+    document.execCommand("copy"); ta.remove();
+  }
+  toast(ok);
+}
+
+$("#dl").onclick = () => {
+  const qs = new URLSearchParams(collect()).toString();
+  location.href = "/api/desk.json?" + qs;
+};
+
+$("#copyJson").onclick = () => copy(JSON.stringify(collect(), null, 2), "JSON 已复制");
+
+$("#copyCmd").onclick = () => {
+  const cmd = [
+    "adb push desk.json /sdcard/Android/data/com.gathin.tvhome/files/desk.json",
+    "adb shell am force-stop com.gathin.tvhome",
+    "adb shell am start -n com.gathin.tvhome/.MainActivity"
+  ].join(" && ");
+  copy(cmd, "adb 命令已复制");
+};
+
+$("#clear").onclick = () => {
+  for (const k of FIELDS) $("#" + k).value = "";
+  $("#liveM3u").value = subUrl;
+  render();
+};
+
+for (const k of FIELDS) $("#" + k).addEventListener("input", render);
+render();
+</script>
+</body>
+</html>

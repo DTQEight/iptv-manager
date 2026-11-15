@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import io
+import json
 import os
 import re
 import shutil
@@ -275,6 +276,33 @@ def api_capture_apply():
         added += 1
     write_channels(existing)
     return jsonify(ok=True, mode="merge", added=added, count=len(existing))
+
+
+# ---------------------------------------------------------------- desk.json 生成器（TVDesk 用）
+
+DESK_FIELDS = ["jfBase", "jfToken", "jfUser", "mpBase", "mpKey",
+               "libBase", "libKey", "liveM3u", "epgUrl"]
+
+
+@app.get("/desk")
+def desk_page():
+    return send_from_directory(str(STATIC_DIR), "desk.html")
+
+
+@app.get("/api/desk.json")
+def api_desk_json():
+    """按查询参数生成 desk.json，直接下载。参数为空的不输出。"""
+    data = {}
+    for k in DESK_FIELDS:
+        v = (request.args.get(k) or "").strip()
+        if v:
+            data[k] = v
+    body = json.dumps(data, ensure_ascii=False, indent=2) + "\n"
+    return Response(
+        body,
+        mimetype="application/json",
+        headers={"Content-Disposition": 'attachment; filename="desk.json"'},
+    )
 
 
 @app.get("/")

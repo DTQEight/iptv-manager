@@ -216,3 +216,25 @@ ls -l /tmp/o.ts      # 几 MB 就说明通了（约等于码率 × 秒数）
 ```
 
 抓取功能也一样：镜像口如果在 IPTV VLAN 上，`IPTV_IFACE` 要写 `eth0.30`。
+## 生成 TVDesk 的 desk.json
+
+配合 [TVDesk 桌面](https://github.com/DTQEight/tvdesk-launcher)：管理页右上角点 **desk.json**，
+或用 `http://<NAS-IP>:8080/desk`。
+
+填好 Jellyfin / MoviePilot / 2bt0 / 直播源，点「下载 desk.json」，然后：
+
+```bash
+adb push desk.json /sdcard/Android/data/com.gathin.tvhome/files/desk.json
+adb shell am force-stop com.gathin.tvhome
+adb shell am start -n com.gathin.tvhome/.MainActivity
+```
+
+电视重启桌面后，「影视」「推荐」页就出来了；留空的项对应页面自动隐藏。
+
+也可以纯命令行生成（方便脚本化）：
+
+```bash
+curl -OJ 'http://192.168.31.52:8080/api/desk.json?jfBase=http://192.168.31.52:8096&jfToken=xxx&jfUser=yyy&liveM3u=http://192.168.31.52:8080/list.m3u'
+```
+
+> 直播源那一栏默认已经填成本机的 `/list.m3u`，直接下载就能用。
