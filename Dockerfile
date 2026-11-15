@@ -2,11 +2,13 @@
 FROM alpine:3.20 AS udpxy-build
 
 RUN apk add --no-cache build-base git make
+# 源码在 chipmunk/ 子目录里，make 会产出 udpxy / udpxrec
 RUN git clone --depth 1 https://github.com/pcherenkov/udpxy.git /src \
- && cd /src \
+ && cd /src/chipmunk \
  && make \
- && install -m 0755 udpxy /usr/local/bin/udpxy \
- && /usr/local/bin/udpxy -h 2>&1 | head -3 || true
+ && install -Dm0755 udpxy /out/udpxy \
+ && install -Dm0755 udpxrec /out/udpxrec \
+ && ls -l /out
 
 # ---------- 2. 运行镜像 ----------
 FROM python:3.12-alpine
@@ -42,7 +44,7 @@ RUN chmod +x /usr/local/bin/docker-entrypoint.sh \
  && mkdir -p /data/backup
 
 # udpxy 二进制从编译阶段拿
-COPY --from=udpxy-build /usr/local/bin/udpxy /usr/local/bin/udpxy
+COPY --from=udpxy-build /out/udpxy /usr/local/bin/udpxy
 
 VOLUME ["/data"]
 
