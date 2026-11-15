@@ -1,7 +1,7 @@
 FROM python:3.12-alpine
 
 LABEL org.opencontainers.image.source="https://github.com/DTQEight/iptv-manager" \
-      org.opencontainers.image.description="本地 IPTV 频道管理（M3U 导入导出 / 搜索 / 播放）" \
+      org.opencontainers.image.description="本地 IPTV 频道管理（M3U 导入导出 / 搜索 / 播放 / 交换机镜像自动抓取）" \
       org.opencontainers.image.licenses="MIT"
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
@@ -13,7 +13,8 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 WORKDIR /app
 
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+RUN apk add --no-cache libpcap tcpdump \
+ && pip install --no-cache-dir -r requirements.txt
 
 COPY app ./app
 

@@ -4,11 +4,22 @@ services:
     image: iptv-manager:latest
     container_name: iptv-manager
     restart: unless-stopped
-    ports:
-      - "8080:8080"
+
+    # 自动抓取（交换机镜像口）需要看到真实网卡，所以用 host 网络 + 抓包权限。
+    # 不需要抓取功能时，可以把 network_mode / cap_add 删掉，改用下面的 ports。
+    network_mode: host
+    cap_add:
+      - NET_RAW
+      - NET_ADMIN
+    # ports:
+    #   - "8080:8080"
+
     volumes:
       # 频道清单存在这里，容器删了数据还在
       - ./data:/data
+
     environment:
       - TZ=Asia/Shanghai
       - PORT=8080
+      # 抓取默认网卡，留空就在页面里选（host 网络下一般是 eth0 / enp3s0）
+      - IPTV_IFACE=

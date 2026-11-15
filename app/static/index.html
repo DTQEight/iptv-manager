@@ -40,6 +40,19 @@ dialog .df{padding:12px 16px;border-top:1px solid #232a36;display:flex;gap:8px;j
 #player video{width:100%;height:100%;background:#000}
 #player .close{position:absolute;top:14px;right:16px;z-index:2}
 #player .tip{position:absolute;bottom:16px;left:16px;right:16px;font-size:12px;color:#9aa6b6}
+/* 抓取面板 */
+#cap{background:#12161d;border-bottom:1px solid #232a36;padding:10px 20px;display:none}
+#cap.on{display:block}
+#cap .row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+#cap input,#cap select{flex:0 0 auto;min-width:120px}
+#cap .st{font-size:12px;color:#7c8798;margin-top:8px;display:flex;gap:14px;flex-wrap:wrap}
+#cap .st b{color:#9fd0ff;font-weight:600}
+#cap table{width:100%;border-collapse:collapse;margin-top:10px;font-size:12px}
+#cap th,#cap td{padding:5px 8px;border-bottom:1px solid #1e2530;text-align:left}
+#cap th{color:#7c8798;font-weight:500}
+#cap td.mono{font:11px/1.3 ui-monospace,Consolas,monospace;color:#9fd0ff}
+#cap .tick{color:#39d98a}
+#cap .warn{color:#f0b429}
 .toast{position:fixed;left:50%;bottom:28px;transform:translateX(-50%);background:#1f2733;border:1px solid #2f3a4a;padding:9px 16px;border-radius:999px;font-size:13px;opacity:0;pointer-events:none;transition:.2s;z-index:99}
 .toast.on{opacity:1}
 </style>
@@ -53,9 +66,25 @@ dialog .df{padding:12px 16px;border-top:1px solid #232a36;display:flex;gap:8px;j
     <button id="import">导入 M3U</button>
     <button id="export">导出 M3U</button>
     <button id="copySub">复制订阅地址</button>
+    <button id="capToggle">自动抓取</button>
   </div>
 </header>
 <nav id="groups"></nav>
+
+<section id="cap">
+  <div class="row">
+    <select id="c_iface" title="监听网卡（镜像口）"></select>
+    <input id="c_udpxy" placeholder="udpxy 地址，如 http://192.168.1.10:4022">
+    <button class="pri" id="c_start">开始抓取</button>
+    <button id="c_stop">停止</button>
+    <button id="c_apply">加入清单</button>
+    <label style="flex-direction:row;align-items:center;gap:6px;font-size:12px;color:#9aa6b6">
+      <input type="checkbox" id="c_merge" checked style="width:auto"> 合并（不覆盖）
+    </label>
+  </div>
+  <div class="st" id="c_st">未开始 · 需要交换机把机顶盒口镜像到本机网卡</div>
+  <div id="c_tbl"></div>
+</section>
 <main id="list"></main>
 
 <div id="player">
@@ -263,6 +292,93 @@ $("#closePlayer").onclick = () => {
 };
 
 $("#q").oninput = render;
+// ---------------------------------------------------------------- 自动抓取
+let capTimer = null;
+
+$("#capToggle").onclick = async () => {
+  const box = $("#cap");
+  box.classList.toggle("on");
+  if (!box.classList.contains("on")) return;
+  if (!$("#c_iface").options.length) {
+    const r = await fetch("/api/capture/ifaces");
+    const d = await r.json();
+    $("#c_iface").innerHTML = (d.ifaces || []).map(n => `<option>${esc(n)}</option>`).join("");
+    if (d.default) $("#c_iface").value = d.default;
+  }
+  if (!$("#c_udpxy").value) {
+    $("#c_udpxy").value = "http://" + location.hostname + ":4022";
+  }
+  capPoll();
+};
+
+async function capPoll(){
+  clearTimeout(capTimer);
+  const r = await fetch("/api/capture/status");
+  const s = await r.json();
+  const running = !!s.running;
+  const bits = [
+    running ? "抓取中 · <b>" + Math.round(s.elapsed || 0) + "s</b>" : "已停止",
+    "包 <b>" + (s.packets || 0) + "</b>",
+    "IGMP <b>" + (s.igmpGroups || 0) + "</b>",
+    "识别 <b>" + (s.named || 0) + "/" + (s.channels || 0) + "</b>"
+  ];
+  if (s.error) bits.push(`<span class="warn">${esc(s.error)}</span>`);
+  $("#c_st").innerHTML = bits.join(" · ");
+  if (running || s.channels) await capRender();
+  capTimer = setTimeout(capPoll, running ? 2000 : 8000);
+}
+
+async function capRender(){
+  const r = await fetch("/api/capture/channels");
+  const d = await r.json();
+  const list = d.channels || [];
+  if (!list.length){
+    $("#c_tbl").innerHTML = `<div style="font-size:12px;color:#7c8798;margin-top:8px">还没有抓到流。先在机顶盒上换几个台，让 IGMP 加入 + 组播流出现在镜像口上。</div>`;
+    return;
+  }
+  $("#c_tbl").innerHTML = `<table>
+    <tr><th>频道名（SDT）</th><th>组播</th><th>分组</th><th>包</th><th>状态</th></tr>
+    ${list.map(c => `<tr>
+      <td>${c.name ? esc(c.name) : '<span class="warn">未识别</span>'}</td>
+      <td class="mono">${esc(c.group)}:${c.port}</td>
+      <td>${esc(c.provider || "-")}</td>
+      <td>${c.packets}</td>
+      <td>${c.hasSdt ? '<span class="tick">✓</span>' : '<span class="warn">等待中</span>'}</td>
+    </tr>`).join("")}
+  </table>`;
+}
+
+$("#c_start").onclick = async () => {
+  const body = { iface: $("#c_iface").value, udpxy: $("#c_udpxy").value.trim() };
+  const r = await fetch("/api/capture/start", {
+    method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(body)
+  });
+  const d = await r.json();
+  if (!r.ok){ toast(d.error || "启动失败"); return; }
+  toast("开始抓取：" + (body.iface || "默认网卡"));
+  capPoll();
+};
+
+$("#c_stop").onclick = async () => {
+  await fetch("/api/capture/stop", { method: "POST" });
+  toast("已停止");
+  capPoll();
+};
+
+$("#c_apply").onclick = async () => {
+  const body = {
+    mode: $("#c_merge").checked ? "merge" : "replace",
+    udpxy: $("#c_udpxy").value.trim()
+  };
+  const r = await fetch("/api/capture/apply", {
+    method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(body)
+  });
+  const d = await r.json();
+  if (!r.ok){ toast(d.error || "加入失败"); return; }
+  await load();
+  toast(d.mode === "merge" ? ("已合并 " + d.added + " 个频道") : ("已替换为 " + d.count + " 个频道"));
+};
+
 load();
 </script>
 </body>
