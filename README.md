@@ -190,3 +190,29 @@ docker compose up -d
 ```
 
 原来的频道清单如果还有用，把 `list.m3u` 拷进 `./data/` 即可（`docker cp` 或直接复制），管理页一刷新就能看到。
+### 多 VLAN / IPTV 专网（重要）
+
+很多光猫/运营商的 IPTV 是**独立 VLAN**（比如 VLAN 30），组播只在这个子接口上出现。这时 udpxy 必须显式指定网卡，否则它会走默认路由的网卡、一个字节都收不到：
+
+```yaml
+environment:
+  - UDPXY_IFACE=eth0.30     # 你的 IPTV VLAN 子接口
+```
+
+判断方法（在宿主机上）：
+
+```bash
+ip route get 239.10.0.90
+#   multicast 239.10.0.90 dev bridge0 ...      ← 走错网卡了，收不到
+ip -br addr | grep -E 'eth0|vlan'
+#   eth0.30  UP  10.76.47.251/16               ← IPTV 专网在这里
+```
+
+指定 `UDPXY_IFACE=eth0.30` 后，`curl` 一段流应该能看到字节数在涨：
+
+```bash
+timeout 6 curl -s -o /tmp/o.ts http://127.0.0.1:4022/rtp/239.10.0.90:1025
+ls -l /tmp/o.ts      # 几 MB 就说明通了（约等于码率 × 秒数）
+```
+
+抓取功能也一样：镜像口如果在 IPTV VLAN 上，`IPTV_IFACE` 要写 `eth0.30`。
