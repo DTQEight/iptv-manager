@@ -306,7 +306,14 @@ $("#capToggle").onclick = async () => {
     if (d.default) $("#c_iface").value = d.default;
   }
   if (!$("#c_udpxy").value) {
-    $("#c_udpxy").value = "http://" + location.hostname + ":4022";
+    try {
+      const cfg = await (await fetch("/api/config")).json();
+      $("#c_udpxy").value = cfg.udpxyEnabled
+        ? (cfg.udpxyBase || ("http://" + location.hostname + ":4022"))
+        : ("http://" + location.hostname + ":4022");
+    } catch (e) {
+      $("#c_udpxy").value = "http://" + location.hostname + ":4022";
+    }
   }
   capPoll();
 };

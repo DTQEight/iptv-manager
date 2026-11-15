@@ -2,30 +2,38 @@
 
 本地 IPTV 频道管理（Docker）：导入自己的 M3U、分组搜索、在线预览、导出订阅给 Kodi / TVDesk / TiviMate。
 
+**一个容器搞定三件事**：管理页 + 内置 udpxy（组播转 HTTP-TS） + 交换机镜像自动抓频道。
+以前要单独跑一个 udpxy 容器，现在可以删掉了。
+
 **仓库里只有程序，没有你的频道清单。** 频道数据放在宿主机 `./data` 目录，容器怎么重建都不会丢，也不会进 git。
 
 ## 快速开始
 
 ```bash
-git clone https://github.com/DTQEight/iptv-manager.git
-cd iptv-manager
+# 1. 准备目录
+mkdir -p /volume1/docker/iptv-manager && cd /volume1/docker/iptv-manager
+mkdir -p data
 
-# 起服务（首次会构建镜像）
-docker compose up -d --build
+# 2. 拿 compose 文件（或者直接复制本仓库的 docker-compose.yml）
+curl -fsSLO https://raw.githubusercontent.com/DTQEight/iptv-manager/main/docker-compose.yml
 
-# 打开
-#   http://<NAS-IP>:8080
+# 3. 起服务（用 ghcr 上 CI 构建好的镜像，不用本地构建）
+docker compose up -d
+
+# 4. 验证
+docker compose logs -f --tail 30
+#   [iptv] 启动 udpxy: udpxy -p 4022 -T -c 10 ...
+#   [iptv] 启动管理页: port 8080
 ```
 
-或者直接跑现成镜像（GitHub Actions 自动构建好的）：
+打开：
 
-```bash
-docker run -d --name iptv-manager \
-  -p 8080:8080 \
-  -v $(pwd)/data:/data \
-  --restart unless-stopped \
-  ghcr.io/dtqeight/iptv-manager:latest
-```
+- 管理页 <http://NAS-IP:8080>
+- udpxy  <http://NAS-IP:4022/status>
+
+> 因为 `network_mode: host`，端口直接落在宿主机上，不需要 `ports:` 映射。
+> 如果你不想用 host 网络（也就放弃抓取和 udpxy 收组播），可以把 compose 里的
+> `network_mode`/`cap_add` 删掉，改成 `ports: ["8080:8080", "4022:4022"]`。
 
 ## 第一次用
 
@@ -129,3 +137,56 @@ MIT。`mpegts.js` 按其自身 Apache-2.0 授权。
 - 加密/加扰的频道可能没有可读 SDT → 显示「未识别」，这类不会被加入清单
 - 组播流量不小（单台 4~8 Mbps，整 VLAN 可能上百 Mbps）。程序只在每个流的前若干包上解析 SDT，识别到名字就不再解析负载，但 Python 抓包仍可能丢包——不影响识别结果
 - 没抓到任何东西时先确认：`tcpdump -i eth0 -n igmp` 在 NAS 上能看到 IGMP，说明镜像配对了
+## 内置 udpxy
+
+镜像里已经编好 [udpxy](https://github.com/pcherenkov/udpxy)（Alpine 没打包，Dockerfile 里多阶段编译），和 flask 一起由 `docker-entrypoint.sh` 拉起：
+
+```
+容器
+├─ udpxy   -p 4022   ← 组播 RTP → HTTP-TS
+└─ flask   -p 8080   ← 管理页 + 抓取
+```
+
+播放器里的地址就是：
+
+```
+http://<NAS-IP>:4022/rtp/239.10.0.90:1025
+```
+
+`http://<NAS-IP>:4022/status` 是 udpxy 自带的状态页，能看到当前每个客户端的码率。
+
+### 可调环境变量
+
+| 变量 | 默认 | 说明 |
+|---|---|---|
+| `UDPXY_ENABLE` | `1` | 设 `0` 只跑管理页，不启 udpxy |
+| `UDPXY_PORT` | `4022` | udpxy 监听端口 |
+| `UDPXY_CLIENTS` | `10` | 最大客户端数（`-c`） |
+| `UDPXY_BUFSIZE` | `65536` | 单个 socket 缓冲（`-B`） |
+| `UDPXY_BUFFERS` | `32` | 缓冲块数（`-M`） |
+| `UDPXY_IFACE` | 空 | 收组播的网卡（`-m`），多网卡建议写死 |
+| `UDPXY_BIND` | 空 | 绑定地址（`-a`） |
+
+### 换掉原来的独立 udpxy 容器
+
+以前可能是这样两个容器：
+
+```yaml
+services:
+  udpxy:            # ← 删掉
+    image: xxxxx/udpxy
+    network_mode: host
+  itv-web:          # ← 也删掉
+    image: xxxxx/itv-web
+```
+
+现在只留一个：
+
+```bash
+docker rm -f udpxy itv-web 2>/dev/null
+mkdir -p /volume1/docker/iptv-manager/data && cd /volume1/docker/iptv-manager
+curl -fsSLO https://raw.githubusercontent.com/DTQEight/iptv-manager/main/docker-compose.yml
+docker compose up -d
+```
+
+原来的频道清单如果还有用，把 `list.m3u` 拷进 `./data/` 即可（`docker cp` 或直接复制），管理页一刷新就能看到。

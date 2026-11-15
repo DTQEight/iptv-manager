@@ -99,6 +99,19 @@ def write_channels(channels: list[dict]) -> None:
 # ---------------------------------------------------------------- API
 
 
+@app.get("/api/config")
+def api_config():
+    """给前端预填用的运行参数。"""
+    host = request.host.split(":")[0] if request.host else ""
+    port = os.environ.get("UDPXY_PORT", "4022")
+    return jsonify(
+        udpxyPort=int(port),
+        udpxyBase="http://%s:%s" % (host, port) if host else "",
+        udpxyEnabled=os.environ.get("UDPXY_ENABLE", "1") != "0",
+        port=int(os.environ.get("PORT", "8080")),
+    )
+
+
 @app.get("/api/health")
 def health():
     return jsonify(ok=True, playlist=str(PLAYLIST), exists=PLAYLIST.exists())
